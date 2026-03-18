@@ -6,9 +6,6 @@ from src.domain.interfaces import APIClientInterface
 
 
 class APISUNAT(APIClientInterface):
-    def __init__(self, client_id, client_secret):
-        self.client_id = client_id
-        self.client_secret = client_secret
 
     def get_token(self, ruc, usuario_sol, clave_sol, id, clave) -> str:
         url_seguridad = (
@@ -57,34 +54,31 @@ class APISUNAT(APIClientInterface):
                 params=params_exportar,
                 headers=self._get_headers(token_acceso),
             )
-
             res_exportar.raise_for_status()
             numero_ticket = res_exportar.json().get("numTicket")
 
             if not numero_ticket:
-                print("✗ No se recibió un número de ticket.")
-                sys.exit(1)
+                # ¡AQUÍ! Cambiamos sys.exit por raise
+                raise ValueError("No se recibió un número de ticket de SUNAT.")
 
             print(f"✓ Ticket generado: {numero_ticket}\n")
+            
+            # ¡AQUÍ! Retornamos el valor prometido (str)
+            return numero_ticket 
+
         except Exception as e:
-            print(f"✗ Error al solicitar reporte: {e}")
-            sys.exit(1)
+            # ¡AQUÍ! Cambiamos sys.exit por raise
+            raise RuntimeError(f"Error al solicitar reporte: {e}")
+
 
     def verificar_estado(self, numero_ticket, token_acceso, periodo) -> dict:
         url_estado = "https://api-sire.sunat.gob.pe/v1/contribuyente/migeigv/libros/rvierce/gestionprocesosmasivos/web/masivo/consultaestadotickets"
         params_estado = {
-            "perIni": periodo,
-            "perFin": periodo,
-            "page": 1,
-            "perPage": 20,
-            "numTicket": numero_ticket,
-            "codLibro": "140000",
-            "codOrigenEnvio": "2",
+            "perIni": periodo, "perFin": periodo, "page": 1, "perPage": 20,
+            "numTicket": numero_ticket, "codLibro": "140000", "codOrigenEnvio": "2",
         }
-        ticket_terminado = False
-        datos_archivo = {}
-
-        while not ticket_terminado:
+        
+        while True:
             try:
                 res_estado = requests.get(
                     url_estado,
@@ -101,43 +95,30 @@ class APISUNAT(APIClientInterface):
 
                     print(f" -> Estado actual: {desc_estado} (Código: {estado})")
 
-                    # Código 06 significa "Terminado"
                     if estado == "06":
-                        ticket_terminado = True
-                        detalle = registro_actual.get("detalleTicket", {})
-                        archivos = detalle.get("archivoReporte", [])
+                        archivos = registro_actual.get("archivoReporte", [])
 
                         if archivos:
-                            # Guardamos las variables extraídas dinámicamente para el Paso 3
                             datos_archivo = {
-                                "nomArchivoReporte": archivos[0].get(
-                                    "nomArchivoReporte"
-                                ),
-                                "codTipoArchivoReporte": archivos[0].get(
-                                    "codTipoAchivoReporte"
-                                ),
+                                "nomArchivoReporte": archivos[0].get("nomArchivoReporte"),
+                                "codTipoArchivoReporte": archivos[0].get("codTipoAchivoReporte", ""),
                                 "codProceso": registro_actual.get("codProceso"),
                             }
                             print("✓ El archivo está listo.\n")
-
-                            return datos_archivo
+                            
+                            return datos_archivo 
                         else:
-                            print(
-                                "✗ El ticket terminó, pero no se encontró el archivo en la respuesta."
-                            )
-                            sys.exit(1)
+                            raise ValueError("El ticket terminó, pero no se encontró el archivo.")
 
                     elif estado == "03":
-                        print("✗ El proceso terminó con errores según SUNAT.")
-                        sys.exit(1)
+                        raise RuntimeError("El proceso terminó con errores según SUNAT.")
                     else:
                         time.sleep(3)
                 else:
                     time.sleep(3)
 
             except Exception as e:
-                print(f"✗ Error al consultar estado: {e}")
-                sys.exit(1)
+                raise RuntimeError(f"Error al consultar estado: {e}")
 
     def descargar_archivo(
         self, datos_archivo, token_acceso, periodo, numero_ticket
