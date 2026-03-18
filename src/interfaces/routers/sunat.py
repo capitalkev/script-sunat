@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from src.application.api_sunat.get_sunat import APIService
-from src.interfaces.dependencias.enrolado import get_operaciones_repo, get_api_service
-from src.infrastructure.postgresql.repositories_sunat.sunat import OperacionesRepository
+from src.application.enrolados.get_enrolados import GetEnrolado
+from src.interfaces.dependencias.enrolado import dp_get_enrolado, get_api_service
 
 router = APIRouter(prefix="/api-sunat", tags=["api-sunat"])
 
@@ -44,13 +44,13 @@ def descargar_automatico(
     ruc: str,
     periodo: str,
     action: APIService = Depends(get_api_service),
-    repo: OperacionesRepository = Depends(get_operaciones_repo),
+    repo: GetEnrolado = Depends(dp_get_enrolado),
 ):
     """
     Este endpoint solo recibe el RUC y el Periodo.
     Busca las credenciales en la base de datos y ejecuta el proceso.
     """
-    enrolados = repo.get_enrolado(ruc=ruc)
+    enrolados = repo.execute()
 
     if not enrolados or len(enrolados) == 0:
         raise HTTPException(
