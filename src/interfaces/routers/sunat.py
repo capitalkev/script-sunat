@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from datetime import datetime
 
 from src.application.api_sunat.get_sunat import APIService
 from src.application.enrolados.get_enrolados import GetEnrolado
@@ -58,35 +59,63 @@ def descargar_manual(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/automatico/{ruc}/{periodo}")
-def descargar_automatico(
-    ruc: str,
-    periodo: str,
+@router.post("/procesar-lote-automatico")
+def procesar_lote_automatico(
+    limit: int = 2,
     action: APIService = Depends(get_api_service),
     repo: GetEnrolado = Depends(dp_get_enrolado),
 ):
-    usuario_db = repo.execute(ruc=ruc)
+    """
+    Este endpoint se ejecuta (por ejemplo) cada madrugada por un CronJob.
+    Calcula el mes anterior, extrae los clientes y los procesa uno por uno.
+    """
+    
+    # 1. Calcular automáticamente el Periodo (Mes anterior)
+    hoy = datetime.now()
+    mes_anterior = hoy.month - 1
+    anio = hoy.year
+    if mes_anterior == 0:
+        mes_anterior = 12
+        anio -= 1
+    periodo_automatico = f"{anio}{mes_anterior:02d}"
+    
+    enrolados = repo.execute(limite=limit)
 
-    if not usuario_db:
-        raise HTTPException(
-            status_code=404,
-            detail=f"El RUC {ruc} no está registrado en la base de datos.",
-        )
+    if not enrolados:
+        raise HTTPException(status_code=404, detail="No hay enrolados en la base de datos.")
 
-    try:
-        resultado = action.execute(
-            ruc=usuario_db["ruc"],
-            usuario_sol=usuario_db["usuario_sol"],
-            clave_sol=usuario_db["clave_sol"],
-            id=usuario_db["client_id"],
-            clave=usuario_db["client_secret"],
-            periodo=periodo,
-        )
-        return {"status": "success", "tipo": "automatico", "data": resultado}
+    resultados = []
+    
+    for usuario_db in enrolados:
+        ruc_actual = usuario_db.get("ruc")
+        try:
+            # Ejecutamos el caso de uso que interactúa con SUNAT
+            resultado = action.execute(
+                ruc=ruc_actual,
+                usuario_sol=usuario_db["usuario_sol"],
+                clave_sol=usuario_db["clave_sol"],
+                id=usuario_db["client_id"],
+                clave=usuario_db["client_secret"],
+                periodo=periodo_automatico,
+            )
+            # Guardamos el éxito
+            resultados.append({
+                "ruc": ruc_actual, 
+                "status": "success", 
+                "ticket": resultado.get("ticket")
+            })
+            
+        except Exception as e:
+            resultados.append({
+                "ruc": ruc_actual, 
+                "status": "error", 
+                "mensaje": str(e)
+            })
 
-    except KeyError as e:
-        raise HTTPException(
-            status_code=500, detail=f"Falta la columna {str(e)} en la tabla enrolado."
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "status": "success",
+        "tipo": "automatico_lote",
+        "periodo_procesado": periodo_automatico,
+        "total_procesados": len(resultados),
+        "detalle": resultados
+    }

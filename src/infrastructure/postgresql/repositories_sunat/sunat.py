@@ -10,10 +10,13 @@ class ScriptRepository(ScriptInterface):
     def __init__(self, db: Session):
         self.db = db
 
-    def get_enrolado(self) -> Any:
-        query = text(
-            "SELECT ruc, usuario_sol, clave_sol, client_id, client_secret FROM enrolado limit 2"
-        )
+    def get_enrolado(self, limite: int = None) -> Any:
+        query_str = "SELECT ruc, usuario_sol, clave_sol, client_id, client_secret FROM enrolados"
+
+        if limite is not None:
+            query_str += f" LIMIT {limite}"
+
+        query = text(query_str)
         result = self.db.execute(query)
         return [dict(row) for row in result.mappings()]
 
@@ -48,11 +51,3 @@ class ScriptRepository(ScriptInterface):
             self.db.execute(insert_query, datos)
 
         self.db.commit()
-
-    # asignar enrolado a ejecutivo
-    # agregar enrolados
-    # descargar un mes
-    # descargar los ultimos meses
-    # revisar casos fallidos
-    # retornar un enrolado
-    # revisar si ese mes ya fue sacado

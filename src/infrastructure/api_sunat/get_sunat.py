@@ -1,6 +1,7 @@
 import requests
-import sys
 import time
+import os
+import zipfile
 
 from src.domain.interfaces import APIClientInterface
 
@@ -58,16 +59,13 @@ class APISUNAT(APIClientInterface):
             numero_ticket = res_exportar.json().get("numTicket")
 
             if not numero_ticket:
-                # ¡AQUÍ! Cambiamos sys.exit por raise
                 raise ValueError("No se recibió un número de ticket de SUNAT.")
 
             print(f"✓ Ticket generado: {numero_ticket}\n")
             
-            # ¡AQUÍ! Retornamos el valor prometido (str)
             return numero_ticket 
 
         except Exception as e:
-            # ¡AQUÍ! Cambiamos sys.exit por raise
             raise RuntimeError(f"Error al solicitar reporte: {e}")
 
 
@@ -122,7 +120,7 @@ class APISUNAT(APIClientInterface):
 
     def descargar_archivo(
         self, datos_archivo, token_acceso, periodo, numero_ticket
-    ) -> None:
+    ) -> str:
         url_descarga = "https://api-sire.sunat.gob.pe/v1/contribuyente/migeigv/libros/rvierce/gestionprocesosmasivos/web/masivo/archivoreporte"
         params_descarga = {
             "nomArchivoReporte": datos_archivo["nomArchivoReporte"],
@@ -140,13 +138,39 @@ class APISUNAT(APIClientInterface):
             )
             res_descarga.raise_for_status()
 
-            # Escribimos los bytes directamente a un archivo local
-            nombre_local = f"propuesta_sire_{periodo}.zip"
-            with open(nombre_local, "wb") as f:
-                f.write(res_descarga.content)
+            # 1. Crear carpeta de descargas si no existe
+            directorio_descargas = "descargas_sire"
+            os.makedirs(directorio_descargas, exist_ok=True)
 
-            print(f"✓ ¡Proceso completado! Archivo guardado como '{nombre_local}'.")
+            # 2. Nombre único para el ZIP usando el número de ticket
+            nombre_original = datos_archivo["nomArchivoReporte"]
+            ruta_zip = os.path.join(directorio_descargas, f"{numero_ticket}_{nombre_original}")
+
+            # Guardar el ZIP
+            with open(ruta_zip, "wb") as f:
+                f.write(res_descarga.content)
+            
+            # 3. Extraer el archivo
+            ruta_extraccion = os.path.join(directorio_descargas, f"extraido_{numero_ticket}")
+            os.makedirs(ruta_extraccion, exist_ok=True)
+            
+            ruta_archivo_final = ""
+            with zipfile.ZipFile(ruta_zip, 'r') as zip_ref:
+                zip_ref.extractall(ruta_extraccion)
+                archivos_extraidos = zip_ref.namelist()
+                
+                if archivos_extraidos:
+                    # Obtenemos la ruta del primer archivo extraído (el Excel/CSV)
+                    ruta_archivo_final = os.path.join(ruta_extraccion, archivos_extraidos[0])
+
+            print(f"✓ Archivo extraído listo para procesar en: '{ruta_archivo_final}'")
+            
+            os.remove(ruta_zip) 
+
+            return ruta_archivo_final
+
         except Exception as e:
-            print(f"✗ Error al descargar el archivo: {e}")
+            print(f"✗ Error al descargar o extraer el archivo: {e}")
             if hasattr(e, "response") and e.response is not None:
                 print(f"Detalle: {e.response.text}")
+            raise RuntimeError(f"Fallo en la descarga: {e}")
