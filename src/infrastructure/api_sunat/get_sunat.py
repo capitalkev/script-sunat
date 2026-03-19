@@ -26,29 +26,24 @@ class APISUNAT(APIClientInterface):
 
         try:
             response = requests.post(url_seguridad, data=payload, headers=headers)
+
+            if response.status_code != 200:
+                raise ValueError(
+                    f"SUNAT rechazó las credenciales: {response.status_code} - {response.text}"
+                )
+
             response.raise_for_status()
             datos = response.json()
-            token_acceso = datos.get("access_token")
+            return datos.get("access_token")
 
-        except requests.exceptions.RequestException as e:
-            print(f"Error al obtener el token: {e}")
-            if response is not None and response.text:
-                print(f"Detalle de SUNAT: {response.text}")
-            token_acceso = None
-
-        return token_acceso
-
-    def _get_headers(self, token_acceso) -> dict:
-        headers_sire = {
-            "Authorization": f"Bearer {token_acceso}",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-        return headers_sire
+        except Exception as e:
+            # Aquí detenemos el script inmediatamente, evitando el falso "401" después
+            raise ValueError(f"Fallo crítico en autenticación: {e}")
 
     def solicitar_descarga(self, periodo, token_acceso) -> str:
         url_exportar = f"https://api-sire.sunat.gob.pe/v1/contribuyente/migeigv/libros/rvie/propuesta/web/propuesta/{periodo}/exportapropuesta"
         params_exportar = {"codTipoArchivo": "1"}
+
         try:
             res_exportar = requests.get(
                 url_exportar,
@@ -62,20 +57,39 @@ class APISUNAT(APIClientInterface):
                 raise ValueError("No se recibió un número de ticket de SUNAT.")
 
             print(f"✓ Ticket generado: {numero_ticket}\n")
-            
-            return numero_ticket 
+            return numero_ticket
 
-        except Exception as e:
-            raise RuntimeError(f"Error al solicitar reporte: {e}")
+        except requests.exceptions.HTTPError as e:
+            # Si SUNAT arroja 500, sabemos que es porque la propuesta está vacía según su manual
+            if e.response.status_code == 500:
+                raise RuntimeError(
+                    "SUNAT Error 500: La propuesta está vacía (sin comprobantes) para este periodo."
+                )
+            else:
+                raise RuntimeError(
+                    f"Error HTTP de SUNAT: {e.response.status_code} - {e.response.text}"
+                )
 
+    def _get_headers(self, token_acceso) -> dict:
+        headers_sire = {
+            "Authorization": f"Bearer {token_acceso}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        return headers_sire
 
     def verificar_estado(self, numero_ticket, token_acceso, periodo) -> dict:
         url_estado = "https://api-sire.sunat.gob.pe/v1/contribuyente/migeigv/libros/rvierce/gestionprocesosmasivos/web/masivo/consultaestadotickets"
         params_estado = {
-            "perIni": periodo, "perFin": periodo, "page": 1, "perPage": 20,
-            "numTicket": numero_ticket, "codLibro": "140000", "codOrigenEnvio": "2",
+            "perIni": periodo,
+            "perFin": periodo,
+            "page": 1,
+            "perPage": 20,
+            "numTicket": numero_ticket,
+            "codLibro": "140000",
+            "codOrigenEnvio": "2",
         }
-        
+
         while True:
             try:
                 res_estado = requests.get(
@@ -98,18 +112,26 @@ class APISUNAT(APIClientInterface):
 
                         if archivos:
                             datos_archivo = {
-                                "nomArchivoReporte": archivos[0].get("nomArchivoReporte"),
-                                "codTipoArchivoReporte": archivos[0].get("codTipoAchivoReporte", ""),
+                                "nomArchivoReporte": archivos[0].get(
+                                    "nomArchivoReporte"
+                                ),
+                                "codTipoArchivoReporte": archivos[0].get(
+                                    "codTipoAchivoReporte", ""
+                                ),
                                 "codProceso": registro_actual.get("codProceso"),
                             }
                             print("✓ El archivo está listo.\n")
-                            
-                            return datos_archivo 
+
+                            return datos_archivo
                         else:
-                            raise ValueError("El ticket terminó, pero no se encontró el archivo.")
+                            raise ValueError(
+                                "El ticket terminó, pero no se encontró el archivo."
+                            )
 
                     elif estado == "03":
-                        raise RuntimeError("El proceso terminó con errores según SUNAT.")
+                        raise RuntimeError(
+                            "El proceso terminó con errores según SUNAT."
+                        )
                     else:
                         time.sleep(3)
                 else:
@@ -144,28 +166,34 @@ class APISUNAT(APIClientInterface):
 
             # 2. Nombre único para el ZIP usando el número de ticket
             nombre_original = datos_archivo["nomArchivoReporte"]
-            ruta_zip = os.path.join(directorio_descargas, f"{numero_ticket}_{nombre_original}")
+            ruta_zip = os.path.join(
+                directorio_descargas, f"{numero_ticket}_{nombre_original}"
+            )
 
             # Guardar el ZIP
             with open(ruta_zip, "wb") as f:
                 f.write(res_descarga.content)
-            
+
             # 3. Extraer el archivo
-            ruta_extraccion = os.path.join(directorio_descargas, f"extraido_{numero_ticket}")
+            ruta_extraccion = os.path.join(
+                directorio_descargas, f"extraido_{numero_ticket}"
+            )
             os.makedirs(ruta_extraccion, exist_ok=True)
-            
+
             ruta_archivo_final = ""
-            with zipfile.ZipFile(ruta_zip, 'r') as zip_ref:
+            with zipfile.ZipFile(ruta_zip, "r") as zip_ref:
                 zip_ref.extractall(ruta_extraccion)
                 archivos_extraidos = zip_ref.namelist()
-                
+
                 if archivos_extraidos:
                     # Obtenemos la ruta del primer archivo extraído (el Excel/CSV)
-                    ruta_archivo_final = os.path.join(ruta_extraccion, archivos_extraidos[0])
+                    ruta_archivo_final = os.path.join(
+                        ruta_extraccion, archivos_extraidos[0]
+                    )
 
             print(f"✓ Archivo extraído listo para procesar en: '{ruta_archivo_final}'")
-            
-            os.remove(ruta_zip) 
+
+            os.remove(ruta_zip)
 
             return ruta_archivo_final
 

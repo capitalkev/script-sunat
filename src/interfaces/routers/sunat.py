@@ -20,7 +20,6 @@ class CredencialesManuales(BaseModel):
     clave_sol: str
     client_id: str
     client_secret: str
-    periodo: str
 
 
 @router.post("/manual")
@@ -29,17 +28,8 @@ def descargar_manual(
     action: APIService = Depends(get_api_service),
     save_repo: SaveEnrolado = Depends(dp_save_enrolado),
 ):
+    # 1. Guardar o actualizar las credenciales en BD
     try:
-        # 1. Ejecutamos el proceso de SUNAT
-        resultado = action.execute(
-            ruc=datos.ruc,
-            usuario_sol=datos.usuario_sol,
-            clave_sol=datos.clave_sol,
-            id=datos.client_id,
-            clave=datos.client_secret,
-            periodo=datos.periodo,
-        )
-
         datos_bd = {
             "ruc": datos.ruc,
             "usuario_sol": datos.usuario_sol,
@@ -48,15 +38,63 @@ def descargar_manual(
             "client_secret": datos.client_secret,
         }
         save_repo.execute(datos_bd)
-
-        return {
-            "status": "success",
-            "tipo": "manual",
-            "data": resultado,
-            "mensaje": "Descarga exitosa y enrolado guardado en BD.",
-        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Error al guardar credenciales en BD: {e}")
+
+    try:
+        token_maestro = action.sunat.get_token(
+            datos.ruc, datos.usuario_sol, datos.clave_sol, datos.client_id, datos.client_secret
+        )
+    except Exception as e:
+        return {
+            "status": "error",
+            "mensaje": f"No se pudo iniciar sesión en SUNAT: {str(e)}"
+        }
+
+    hoy = datetime.now()
+    anio_actual = hoy.year
+    mes_actual = hoy.month
+    periodos_a_procesar = []
+    
+    for _ in range(15):
+        periodos_a_procesar.append(f"{anio_actual}{mes_actual:02d}")
+        mes_actual -= 1
+        if mes_actual == 0:
+            mes_actual = 12
+            anio_actual -= 1
+
+    # 4. Procesar cada periodo usando el token maestro
+    resultados = []
+    for periodo in periodos_a_procesar:
+        try:
+            resultado_mes = action.execute(
+                ruc=datos.ruc,
+                usuario_sol=datos.usuario_sol,
+                clave_sol=datos.clave_sol,
+                id=datos.client_id,
+                clave=datos.client_secret,
+                periodo=periodo,
+                token_acceso=token_maestro
+            )
+            resultados.append({
+                "periodo": periodo,
+                "status": "success",
+                "data": resultado_mes
+            })
+        except Exception as e:
+            resultados.append({
+                "periodo": periodo,
+                "status": "error",
+                "mensaje": str(e)
+            })
+
+    return {
+        "status": "success",
+        "tipo": "manual_historico",
+        "total_procesados": len(resultados),
+        "mensaje": f"Se procesaron {len(periodos_a_procesar)} meses históricos con un solo token.",
+        "detalle": resultados
+    }
 
 
 @router.post("/procesar-lote-automatico")
@@ -111,7 +149,7 @@ def procesar_lote_automatico(
                 "status": "error", 
                 "mensaje": str(e)
             })
-
+    print(f"Periodo procesado: {periodo_automatico}, Total enrolados: {len(enrolados)}, Resultados: {resultados}")
     return {
         "status": "success",
         "tipo": "automatico_lote",

@@ -10,7 +10,8 @@ class ScriptRepository(ScriptInterface):
     def __init__(self, db: Session):
         self.db = db
 
-    def get_enrolado(self, limite: int = None) -> Any:
+    # Querys para Automático
+    def get_enrolado(self, limite: int) -> Any:
         query_str = "SELECT ruc, usuario_sol, clave_sol, client_id, client_secret FROM enrolados"
 
         if limite is not None:
@@ -19,6 +20,9 @@ class ScriptRepository(ScriptInterface):
         query = text(query_str)
         result = self.db.execute(query)
         return [dict(row) for row in result.mappings()]
+    
+    
+    # Querys para manual
 
     def get_enrolado_by_ruc(self, ruc: str) -> Any:
         query = text(

@@ -4,8 +4,10 @@ class APIService:
     def __init__(self, repository: APIClientInterface):
         self.sunat = repository
 
-    def execute(self, ruc, usuario_sol, clave_sol, id, clave, periodo):
-        token_acceso = self.sunat.get_token(ruc, usuario_sol, clave_sol, id, clave)
+    def execute(self, ruc, usuario_sol, clave_sol, id, clave, periodo, token_acceso=None):
+        if not token_acceso:
+            token_acceso = self.sunat.get_token(ruc, usuario_sol, clave_sol, id, clave)
+            
         numero_ticket = self.sunat.solicitar_descarga(periodo, token_acceso)
         datos_archivo = self.sunat.verificar_estado(numero_ticket, token_acceso, periodo)
         
