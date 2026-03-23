@@ -1,14 +1,16 @@
+# src/interfaces/routers/sunat.py
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
 
-from src.application.api_sunat.get_sunat import APIService
 from src.application.enrolados.get_enrolados import GetEnrolado
 from src.application.enrolados.save_enrolados import SaveEnrolado
+from src.application.api_sunat.orquestador_descargas import OrquestadorDescargas
+
 from src.interfaces.dependencias.enrolado import (
     dp_get_enrolado,
-    get_api_service,
     dp_save_enrolado,
+    get_orquestador_service,
 )
 
 router = APIRouter(prefix="/api-sunat", tags=["api-sunat"])
@@ -22,138 +24,102 @@ class CredencialesManuales(BaseModel):
     client_secret: str
 
 
+def generar_periodos(meses_hacia_atras: int) -> list:
+    """Función de ayuda para calcular los periodos en formato YYYYMM"""
+    hoy = datetime.now()
+    anio_actual, mes_actual = hoy.year, hoy.month
+    periodos = []
+
+    if meses_hacia_atras == 1:
+        mes_actual -= 1
+        if mes_actual == 0:
+            mes_actual, anio_actual = 12, anio_actual - 1
+
+    for _ in range(meses_hacia_atras):
+        periodos.append(f"{anio_actual}{mes_actual:02d}")
+        mes_actual -= 1
+        if mes_actual == 0:
+            mes_actual, anio_actual = 12, anio_actual - 1
+    return periodos
+
+
 @router.post("/manual")
 def descargar_manual(
     datos: CredencialesManuales,
-    action: APIService = Depends(get_api_service),
+    orquestador: OrquestadorDescargas = Depends(get_orquestador_service),
     save_repo: SaveEnrolado = Depends(dp_save_enrolado),
+    repo: GetEnrolado = Depends(dp_get_enrolado),
 ):
-    # 1. Guardar o actualizar las credenciales en BD
+    # 1. Guardar o actualizar en BD
     try:
-        datos_bd = {
-            "ruc": datos.ruc,
-            "usuario_sol": datos.usuario_sol,
-            "clave_sol": datos.clave_sol,
-            "client_id": datos.client_id,
-            "client_secret": datos.client_secret,
-        }
-        save_repo.execute(datos_bd)
+        save_repo.execute(datos.model_dump())
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al guardar credenciales en BD: {e}")
+        raise HTTPException(status_code=500, detail=f"Error BD: {e}")
 
-    try:
-        token_maestro = action.sunat.get_token(
-            datos.ruc, datos.usuario_sol, datos.clave_sol, datos.client_id, datos.client_secret
-        )
-    except Exception as e:
-        return {
-            "status": "error",
-            "mensaje": f"No se pudo iniciar sesión en SUNAT: {str(e)}"
-        }
+    # 2. Obtener el método guardado en BD ('api' o 'scraper')
+    cliente_db = repo.repository.get_enrolado_by_ruc(datos.ruc)
+    metodo = cliente_db.get("metodo", "api") if cliente_db else "api"
 
-    hoy = datetime.now()
-    anio_actual = hoy.year
-    mes_actual = hoy.month
-    periodos_a_procesar = []
-    
-    for _ in range(15):
-        periodos_a_procesar.append(f"{anio_actual}{mes_actual:02d}")
-        mes_actual -= 1
-        if mes_actual == 0:
-            mes_actual = 12
-            anio_actual -= 1
+    # 3. Generar los últimos 15 meses y llamar al Orquestador
+    periodos = generar_periodos(15)
 
-    # 4. Procesar cada periodo usando el token maestro
-    resultados = []
-    for periodo in periodos_a_procesar:
-        try:
-            resultado_mes = action.execute(
-                ruc=datos.ruc,
-                usuario_sol=datos.usuario_sol,
-                clave_sol=datos.clave_sol,
-                id=datos.client_id,
-                clave=datos.client_secret,
-                periodo=periodo,
-                token_acceso=token_maestro
-            )
-            resultados.append({
-                "periodo": periodo,
-                "status": "success",
-                "data": resultado_mes
-            })
-        except Exception as e:
-            resultados.append({
-                "periodo": periodo,
-                "status": "error",
-                "mensaje": str(e)
-            })
+    resultado = orquestador.execute(
+        ruc=datos.ruc,
+        usuario_sol=datos.usuario_sol,
+        clave_sol=datos.clave_sol,
+        client_id=datos.client_id,
+        client_secret=datos.client_secret,
+        metodo=metodo,
+        periodos=periodos,
+    )
 
     return {
         "status": "success",
         "tipo": "manual_historico",
-        "total_procesados": len(resultados),
-        "mensaje": f"Se procesaron {len(periodos_a_procesar)} meses históricos con un solo token.",
-        "detalle": resultados
+        "via_utilizada": resultado["via"],
+        "total_procesados": len(resultado["detalle"]),
+        "detalle": resultado["detalle"],
     }
 
 
 @router.post("/procesar-lote-automatico")
 def procesar_lote_automatico(
     limit: int = 2,
-    action: APIService = Depends(get_api_service),
+    orquestador: OrquestadorDescargas = Depends(get_orquestador_service),
     repo: GetEnrolado = Depends(dp_get_enrolado),
 ):
-    """
-    Este endpoint se ejecuta (por ejemplo) cada madrugada por un CronJob.
-    Calcula el mes anterior, extrae los clientes y los procesa uno por uno.
-    """
-    
-    # 1. Calcular automáticamente el Periodo (Mes anterior)
-    hoy = datetime.now()
-    mes_anterior = hoy.month - 1
-    anio = hoy.year
-    if mes_anterior == 0:
-        mes_anterior = 12
-        anio -= 1
-    periodo_automatico = f"{anio}{mes_anterior:02d}"
-    
     enrolados = repo.execute(limite=limit)
-
     if not enrolados:
-        raise HTTPException(status_code=404, detail="No hay enrolados en la base de datos.")
+        raise HTTPException(
+            status_code=404, detail="No hay enrolados en la base de datos."
+        )
 
-    resultados = []
-    
-    for usuario_db in enrolados:
-        ruc_actual = usuario_db.get("ruc")
-        try:
-            # Ejecutamos el caso de uso que interactúa con SUNAT
-            resultado = action.execute(
-                ruc=ruc_actual,
-                usuario_sol=usuario_db["usuario_sol"],
-                clave_sol=usuario_db["clave_sol"],
-                id=usuario_db["client_id"],
-                clave=usuario_db["client_secret"],
-                periodo=periodo_automatico,
-            )
-            # Guardamos el éxito
-            resultados.append({
-                "ruc": ruc_actual, 
-                "status": "success", 
-                "ticket": resultado.get("ticket")
-            })
-            
-        except Exception as e:
-            resultados.append({
-                "ruc": ruc_actual, 
-                "status": "error", 
-                "mensaje": str(e)
-            })
-    print(f"Periodo procesado: {periodo_automatico}, Total enrolados: {len(enrolados)}, Resultados: {resultados}")
+    # Generamos solo 1 periodo (el mes anterior)
+    periodos = generar_periodos(1)
+    resultados_lote = []
+
+    for emp in enrolados:
+        resultado = orquestador.execute(
+            ruc=emp["ruc"],
+            usuario_sol=emp["usuario_sol"],
+            clave_sol=emp["clave_sol"],
+            client_id=emp["client_id"],
+            client_secret=emp["client_secret"],
+            metodo=emp.get("metodo", "api"),
+            periodos=periodos,
+        )
+        resultados_lote.append(
+            {
+                "ruc": emp["ruc"],
+                "via_utilizada": resultado["via"],
+                "detalle": resultado["detalle"],
+            }
+        )
+
     return {
         "status": "success",
         "tipo": "automatico_lote",
-        "periodo_procesado": periodo_automatico,
-        "total_procesados": len(resultados),
-        "detalle": resultados
+        "periodo_procesado": periodos[0],
+        "total_enrolados": len(enrolados),
+        "resultados": resultados_lote,
     }

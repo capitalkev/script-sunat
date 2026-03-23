@@ -55,3 +55,8 @@ class ScriptRepository(ScriptInterface):
             self.db.execute(insert_query, datos)
 
         self.db.commit()
+
+    def update_metodo(self, ruc: str, metodo: str) -> None:
+        query = text("UPDATE enrolados SET metodo = :metodo WHERE ruc = :ruc")
+        self.db.execute(query, {"metodo": metodo, "ruc": ruc})
+        self.db.commit()

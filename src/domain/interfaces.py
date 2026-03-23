@@ -1,4 +1,4 @@
-from typing import Any, Protocol, List, Dict
+from typing import Any, Protocol
 
 
 class ScriptInterface(Protocol):
@@ -8,6 +8,7 @@ class ScriptInterface(Protocol):
 
     def save_enrolado(self, datos: dict) -> None: ...
 
+    def update_metodo(self, ruc: str, metodo: str) -> None: ...
 
 class APIClientInterface(Protocol):
     def get_token(self, ruc: str, usuario_sol: str, clave_sol: str, id: str, clave: str) -> str: ...
@@ -21,3 +22,8 @@ class APIClientInterface(Protocol):
     def descargar_archivo(
         self, datos_archivo: dict, token_acceso: str, periodo: str, numero_ticket: str
     ) -> str: ...
+
+class ScraperClientInterface(Protocol):
+    def descargar_reportes_historicos(
+        self, ruc: str, usuario_sol: str, clave_sol: str, cantidad_meses: int
+    ) -> list: ...
