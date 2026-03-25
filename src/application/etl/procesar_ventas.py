@@ -50,21 +50,17 @@ class ProcesarVentasETL:
 
         errores_encontrados = len(df_cuarentena) + len(lineas_malas)
         if errores_encontrados > 0:
-            os.makedirs("revision_manual", exist_ok=True)
-            ruta_errores = f"revision_manual/ERRORES_{ruc_cliente}_{periodo}.csv"
+            print(f"[{ruc_cliente}] {errores_encontrados} errores detectados. Guardando en BD...")
+            
             if not df_cuarentena.empty:
-                df_cuarentena.to_csv(ruta_errores, index=False, encoding="utf-8-sig")
-            if lineas_malas:
-                with open(
-                    f"revision_manual/ERRORES_ESTRUCTURA_{ruc_cliente}_{periodo}.txt",
-                    "w",
-                    encoding="utf-8",
-                ) as f:
-                    for linea in lineas_malas:
-                        f.write(",".join(linea) + "\n")
-            print(
-                f"[{ruc_cliente}] {errores_encontrados} errores apartados en revision_manual/"
-            )
+                registros_malos = df_cuarentena.to_dict(orient="records")
+                
+                self.repository.guardar_errores(
+                    registros_malos=registros_malos,
+                    ruc=ruc_cliente,
+                    periodo=periodo,
+                    motivo="Fallo en reglas de negocio (RUC/Periodo/Fecha inválidos)"
+                )
 
         if not df_limpio.empty:
             columnas_inutiles = [
@@ -112,7 +108,6 @@ class ProcesarVentasETL:
                 "Total CP": "total_cp",
                 "Moneda": "moneda",
                 "Tipo Cambio": "tipo_cambio",
-                "Fecha Emisión Doc Modificado": "fecha_emision_doc_modificado",
                 "Serie CP Modificado": "serie_cp_modificado",
                 "Nro CP Modificado": "nro_cp_modificado",
             }
@@ -139,7 +134,7 @@ class ProcesarVentasETL:
                     )
 
             # Convertir NaNs a Nones para PostgreSQL
-            df_limpio = df_limpio.replace({np.nan: None})
+            df_limpio = df_limpio.replace({np.nan: None, pd.NaT: None})
 
             # 5. Carga (Load a la BD)
             self.repository.guardar_lote_ventas(df_limpio, ruc_cliente, periodo)
