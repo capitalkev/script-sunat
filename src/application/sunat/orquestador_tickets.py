@@ -6,7 +6,7 @@ from src.infrastructure.api_sunat.get_sunat import APISUNAT
 from src.infrastructure.playwright_sunat.scraper import PlaywrightTokenScraper
 
 
-class OrquestadorDescargas:
+class OrquestadorTickets:
     def __init__(self, guardar_ticket: SaveTicket):
         self.token_api = GetTokenAPI(APISUNAT())
         self.token_scraper = GetTokenScraping(PlaywrightTokenScraper())

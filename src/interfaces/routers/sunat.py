@@ -5,7 +5,7 @@ from datetime import datetime
 
 from src.application.enrolados.get_enrolados import GetEnrolado
 from src.application.enrolados.save_enrolados import SaveEnrolado
-from src.application.sunat.orquestador_tickets import OrquestadorDescargas
+from src.application.sunat.orquestador_tickets import OrquestadorTickets
 
 from src.interfaces.dependencias.enrolado import (
     dp_get_enrolado,
@@ -44,7 +44,7 @@ def generar_periodos(cantidad_meses: int) -> list:
 @router.post("/manual")
 def descargar_manual(
     datos: CredencialesManuales,
-    orquestador: OrquestadorDescargas = Depends(dp_orquestador),
+    orquestador: OrquestadorTickets = Depends(dp_orquestador),
     save_repo: SaveEnrolado = Depends(dp_save_enrolado),
 ):
     periodos = generar_periodos(15)
@@ -80,7 +80,7 @@ def descargar_manual(
 @router.post("/generar-tickets-automaticos")
 def procesar_lote_automatico(
     limit: int = 2,
-    orquestador: OrquestadorDescargas = Depends(dp_orquestador),
+    orquestador: OrquestadorTickets = Depends(dp_orquestador),
     repo: GetEnrolado = Depends(dp_get_enrolado),
 ):
     enrolados = repo.execute(limite=limit)  # enrolados
@@ -112,7 +112,7 @@ def procesar_lote_automatico(
 @router.get("/descargar-archivos")
 def descargar_archivos(
     limit: int = 2,
-    orquestador: OrquestadorDescargas = Depends(dp_orquestador),
+    orquestador: OrquestadorTickets = Depends(dp_orquestador),
     repo: GetEnrolado = Depends(dp_get_enrolado),
 ):
     enrolados = repo.execute(limite=limit)
