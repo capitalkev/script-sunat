@@ -2,21 +2,24 @@ from src.application.sunat.create_ticket import CreateTicket
 from src.application.sunat.get_token_api import GetTokenAPI
 from src.application.sunat.get_token_scraping import GetTokenScraping
 from src.application.sunat.save_ticket import SaveTicket
-from src.infrastructure.api_sunat.get_sunat import APISUNAT
-from src.infrastructure.playwright_sunat.scraper import PlaywrightTokenScraper
 
 
 class OrquestadorTickets:
-    def __init__(self, guardar_ticket: SaveTicket):
-        self.token_api = GetTokenAPI(APISUNAT())
-        self.token_scraper = GetTokenScraping(PlaywrightTokenScraper())
-        self.generar_ticket = CreateTicket(APISUNAT())
+    def __init__(
+        self,
+        token_api: GetTokenAPI,
+        token_scraper: GetTokenScraping,
+        generar_ticket: CreateTicket,
+        guardar_ticket: SaveTicket
+    ):
+        self.token_api = token_api
+        self.token_scraper = token_scraper
+        self.generar_ticket = generar_ticket
         self.guardar_ticket = guardar_ticket
 
     def execute(
         self, ruc, usuario_sol, clave_sol, client_id, client_secret, periodos: list
     ):
-
         resultados = {}
 
         def obtener_token():
@@ -41,22 +44,22 @@ class OrquestadorTickets:
 
         token_acceso = obtener_token()
 
-        tickets = self.generar_ticket.execute(periodos, token_acceso)
+        for periodo in periodos:
+            try:
+                numero_ticket = self.generar_ticket.execute(periodo, token_acceso)
 
-        if tickets:
-            for periodo, numero_ticket in tickets.items():
                 if numero_ticket:
-                    try:
-                        self.guardar_ticket.execute(ruc, periodo, numero_ticket)
-                        print(
-                            f"[{ruc}] Ticket {numero_ticket} guardado en BD (Periodo: {periodo})"
-                        )
-                    except Exception as e:
-                        print(
-                            f"[{ruc}] Error al guardar ticket {numero_ticket} en BD: {e}"
-                        )
+                    self.guardar_ticket.execute(ruc, periodo, numero_ticket)
+                    print(
+                        f"[{ruc}] Ticket {numero_ticket} guardado en BD (Periodo: {periodo})"
+                    )
+                    resultados[periodo] = {
+                        "ticket": numero_ticket,
+                        "estado": "GUARDADO",
+                    }
 
-        resultados["ruc"] = ruc
-        resultados["tickets"] = tickets
+            except Exception as e:
+                print(f"[{ruc}] Error en periodo {periodo}: {e}")
+                resultados[periodo] = {"error": str(e)}
 
-        return {"resultados": resultados}
+        return {"ruc": ruc, "resultados": resultados}

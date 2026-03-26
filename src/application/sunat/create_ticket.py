@@ -6,9 +6,4 @@ class CreateTicket:
         self.sunat = sunat_client
 
     def execute(self, periodo, token_acceso):
-        resultados = {}
-        for p in periodo:
-            ticket = self.sunat.generar_ticket(p, token_acceso)
-            resultados[p] = ticket
-
-        return resultados
+        return self.sunat.generar_ticket(periodo, token_acceso)

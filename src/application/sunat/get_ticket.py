@@ -2,13 +2,8 @@ from src.domain.interfaces import TicketsInterface
 
 
 class GetTicket:
-    def __init__(self, ticket: TicketsInterface):
-        self.ticket = ticket
+    def __init__(self, ticket_repo: TicketsInterface):
+        self.ticket_repo = ticket_repo
 
     def execute(self, ruc, periodo):
-        resultados = {}
-        for p in periodo:
-            numero_ticket = self.ticket.traer_ticket(ruc, p)
-            resultados[p] = numero_ticket
-
-        return resultados
+        return self.ticket_repo.traer_ticket(ruc, periodo)
