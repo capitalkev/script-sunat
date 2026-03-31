@@ -15,7 +15,6 @@ from src.interfaces.dependencias.enrolado import (
     dp_orquestador_descargas,
     dp_orquestador_tickets,
     dp_save_enrolado,
-    
 )
 
 router = APIRouter(prefix="/api-sunat", tags=["api-sunat"])
@@ -57,7 +56,9 @@ def enrolar_y_generar_tickets_manual(
     try:
         save_repo.execute(datos.model_dump())
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al guardar enrolado en BD: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error al guardar enrolado en BD: {e}"
+        )
 
     resultado = orquestador_tickets.execute(
         ruc=datos.ruc,
@@ -69,7 +70,7 @@ def enrolar_y_generar_tickets_manual(
     )
 
     resultados_tickets = resultado.get("resultados", {})
-    
+
     if not resultados_tickets:
         raise HTTPException(
             status_code=401,
@@ -84,18 +85,19 @@ def enrolar_y_generar_tickets_manual(
         "detalle": resultados_tickets,
     }
 
+
 @router.post("/manual/descargar/{ruc}")
 def descargar_manual_tickets(
     ruc: str,
     orquestador_descargas: OrquestadorDescargas = Depends(dp_orquestador_descargas),
-    repo: GetOnlyEnrolado = Depends(dp_get_only_enrolado)
+    repo: GetOnlyEnrolado = Depends(dp_get_only_enrolado),
 ):
     enrolado = repo.execute(ruc=ruc)
-    
+
     if not enrolado:
         raise HTTPException(
-            status_code=404, 
-            detail=f"No se encontraron credenciales para el RUC {ruc}. Asegúrate de enrolarlo primero."
+            status_code=404,
+            detail=f"No se encontraron credenciales para el RUC {ruc}. Asegúrate de enrolarlo primero.",
         )
     periodos = generar_periodos(13)
 
@@ -112,8 +114,9 @@ def descargar_manual_tickets(
         "status": "success",
         "tipo": "descarga_manual_historico",
         "mensaje": "Revisión de tickets y descargas finalizada.",
-        "detalle": resultado.get("resultados", {})
+        "detalle": resultado.get("resultados", {}),
     }
+
 
 @router.post("/generar-tickets-automaticos")
 def procesar_lote_automatico(
