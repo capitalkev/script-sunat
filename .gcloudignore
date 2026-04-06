@@ -1,0 +1,11 @@
+.git
+.gitignore
+.dockerignore
+env/
+venv/
+.venv/
+.env
+__pycache__/
+csv_errores_sunat/
+.ruff_cache
+.mypy_cache

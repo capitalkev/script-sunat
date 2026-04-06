@@ -1,0 +1,26 @@
+# Git
+.git
+.gitignore
+
+# Entornos virtuales
+env/
+venv/
+.venv/
+env.bak/
+venv.bak/
+
+# Variables de entorno locales (¡Muy importante no subir esto!)
+.env
+
+# Archivos cacheados de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Carpetas de descargas o errores locales
+csv_errores_sunat/
+
+# Archivos de configuración locales
+.pre-commit-config.yaml
