@@ -158,7 +158,6 @@ class APISUNAT(APIClientInterface):
                     csv_bytes = zip_ref.read(nombre_interno)
                     csv_in_memory = io.BytesIO(csv_bytes)
                     
-                    print(f"✓ Archivo {nombre_interno} extraído en memoria.")
                     return csv_in_memory
                 else:
                     raise ValueError("El archivo ZIP de SUNAT está vacío.")

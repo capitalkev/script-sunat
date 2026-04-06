@@ -26,6 +26,7 @@ class CredencialesManuales(BaseModel):
     clave_sol: str
     client_id: str
     client_secret: str
+    email: str
 
 
 def generar_periodos(cantidad_meses: int) -> list:
@@ -120,12 +121,11 @@ def descargar_manual_tickets(
 
 @router.post("/generar-tickets-automaticos")
 def procesar_lote_automatico(
-    limit: int = 2,
     orquestador: OrquestadorTickets = Depends(dp_orquestador_tickets),
     repo: GetEnrolado = Depends(dp_get_enrolado),
 ):
-    enrolados = repo.execute(limite=limit)  # enrolados
-    periodos = generar_periodos(1)  # periodos
+    enrolados = repo.execute()
+    periodos = generar_periodos(1)
 
     resultados_lote = []
 
@@ -152,11 +152,10 @@ def procesar_lote_automatico(
 
 @router.get("/descargar-archivos")
 def descargar_archivos(
-    limit: int = 2,
     orquestador: OrquestadorDescargas = Depends(dp_orquestador_descargas),
     repo: GetEnrolado = Depends(dp_get_enrolado),
 ):
-    enrolados = repo.execute(limite=limit)
+    enrolados = repo.execute()
     periodos = generar_periodos(1)
 
     resultados_lote = []

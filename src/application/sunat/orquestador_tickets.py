@@ -1,6 +1,5 @@
 from src.application.sunat.create_ticket import CreateTicket
-from src.application.sunat.get_token_api import GetTokenAPI
-from src.application.sunat.get_token_scraping import GetTokenScraping
+from src.application.sunat.get_token import GetTocken
 from src.application.sunat.save_ticket import SaveTicket
 from src.infrastructure.postgresql.repositories_sunat.ventas import VentasRepository
 
@@ -8,15 +7,13 @@ from src.infrastructure.postgresql.repositories_sunat.ventas import VentasReposi
 class OrquestadorTickets:
     def __init__(
         self,
-        token_api: GetTokenAPI,
-        token_scraper: GetTokenScraping,
         generar_ticket: CreateTicket,
+        get_token: GetTocken,
         guardar_ticket: SaveTicket,
         ventas_repo: VentasRepository
     ):
-        self.token_api = token_api
-        self.token_scraper = token_scraper
         self.generar_ticket = generar_ticket
+        self.get_token = get_token
         self.guardar_ticket = guardar_ticket
         self.ventas_repo = ventas_repo
 
@@ -25,27 +22,7 @@ class OrquestadorTickets:
     ):
         resultados = {}
 
-        def obtener_token():
-            try:
-                print(f"[{ruc}] 1. Intentando obtener Token vía API...")
-                token1 = self.token_api.execute(
-                    ruc, usuario_sol, clave_sol, client_id, client_secret
-                )
-                if token1:
-                    return token1
-            except Exception:
-                print(f"[{ruc}] Falló Token API. Intentando Playwright...")
-
-            try:
-                print(f"[{ruc}] 2. Intentando obtener Token vía Playwright...")
-                token2 = self.token_scraper.execute(ruc, usuario_sol, clave_sol)
-                if token2:
-                    return token2
-            except Exception:
-                print(f"[{ruc}] Fallo Crítico en Playwright.")
-                return None
-
-        token_acceso = obtener_token()
+        token_acceso = self.get_token.execute(ruc, usuario_sol, clave_sol, client_id, client_secret)
 
         for periodo in periodos:
             if self.ventas_repo.existe_periodo(ruc, periodo):

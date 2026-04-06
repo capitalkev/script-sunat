@@ -8,11 +8,13 @@ from src.application.etl.procesar_ventas import ProcesarVentasETL
 from src.application.enrolados.get_enrolados import GetEnrolado
 from src.application.enrolados.save_enrolados import SaveEnrolado
 from src.application.sunat.get_ticket import GetTicket
+from src.application.sunat.get_token import GetTocken
 from src.application.sunat.get_token_api import GetTokenAPI
 from src.application.sunat.get_token_scraping import GetTokenScraping
 from src.application.sunat.orquestador_descargas import OrquestadorDescargas
 from src.application.sunat.orquestador_tickets import OrquestadorTickets
 from src.application.sunat.save_ticket import SaveTicket
+
 # Infraestructura
 from src.infrastructure.api_sunat.get_sunat import APISUNAT
 from src.infrastructure.playwright_sunat.scraper import PlaywrightTokenScraper
@@ -25,6 +27,7 @@ from src.infrastructure.postgresql.repositories_sunat.ventas import VentasReposi
 def dp_get_enrolado(db: Session = Depends(get_db)) -> GetEnrolado:
     repository = ScriptRepository(db)
     return GetEnrolado(repository)
+
 
 def dp_get_only_enrolado(db: Session = Depends(get_db)) -> GetOnlyEnrolado:
     repository = ScriptRepository(db)
@@ -49,50 +52,47 @@ def get_api_service() -> APIService:
     sunat_client = APISUNAT()
     return APIService(repository=sunat_client)
 
+
 def dp_save_ticket(db: Session = Depends(get_db)) -> SaveTicket:
     """Inyecta la sesión de BD al repositorio de tickets, y el repo al caso de uso."""
     repository = TicketsRepository(db)
     return SaveTicket(repository)
 
+
 def dp_orquestador_tickets(db: Session = Depends(get_db)) -> OrquestadorTickets:
     """Ensambla el orquestador inyectando todas sus dependencias"""
-    
+
     api_sunat = APISUNAT()
-    playwright_scraper = PlaywrightTokenScraper()
     tickets_repo = TicketsRepository(db)
     ventas_repo = VentasRepository(db)
-    
-    get_token_api = GetTokenAPI(api_sunat)
-    get_token_scraper = GetTokenScraping(playwright_scraper)
     create_ticket = CreateTicket(api_sunat)
     save_ticket = SaveTicket(tickets_repo)
+    token_api = GetTokenAPI(api_sunat)
+    token_scraper = GetTokenScraping(PlaywrightTokenScraper())
 
     return OrquestadorTickets(
-        token_api=get_token_api,
-        token_scraper=get_token_scraper,
         generar_ticket=create_ticket,
         guardar_ticket=save_ticket,
-        ventas_repo=ventas_repo
+        ventas_repo=ventas_repo,
+        get_token=GetTocken(token_api, token_scraper),
     )
+
 
 def dp_orquestador_descargas(db: Session = Depends(get_db)) -> OrquestadorDescargas:
     """Ensambla el orquestador de descargas inyectando todas sus dependencias"""
-    
+
     api_sunat = APISUNAT()
-    playwright_scraper = PlaywrightTokenScraper()
     tickets_repo = TicketsRepository(db)
     ventas_repo = VentasRepository(db)
-
-    get_token_api = GetTokenAPI(api_sunat)
-    get_token_scraper = GetTokenScraping(playwright_scraper)
     get_ticket = GetTicket(tickets_repo)
     etl_ventas = ProcesarVentasETL(ventas_repo)
+    token_api = GetTokenAPI(api_sunat)
+    token_scraper = GetTokenScraping(PlaywrightTokenScraper())
 
     return OrquestadorDescargas(
-        token_api=get_token_api,
-        token_scraper=get_token_scraper,
         get_ticket=get_ticket,
         sunat_api=api_sunat,
         etl_ventas=etl_ventas,
-        ventas_repo=ventas_repo
+        ventas_repo=ventas_repo,
+        get_token=GetTocken(token_api, token_scraper),
     )

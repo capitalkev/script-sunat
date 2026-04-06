@@ -1,26 +1,22 @@
-from src.application.sunat.get_token_api import GetTokenAPI
-from src.application.sunat.get_token_scraping import GetTokenScraping
 from src.application.sunat.get_ticket import GetTicket
+from src.application.sunat.get_token import GetTocken
 from src.domain.interfaces import APIClientInterface
 from src.application.etl.procesar_ventas import ProcesarVentasETL
 from src.infrastructure.postgresql.repositories_sunat.ventas import VentasRepository
 from typing import Any
-import os
 
 
 class OrquestadorDescargas:
     def __init__(
         self,
-        token_api: GetTokenAPI,
-        token_scraper: GetTokenScraping,
         get_ticket: GetTicket,
+        get_token: GetTocken,
         sunat_api: APIClientInterface,
         etl_ventas: ProcesarVentasETL,
         ventas_repo: VentasRepository,
     ):
-        self.token_api = token_api
-        self.token_scraper = token_scraper
         self.get_ticket = get_ticket
+        self.get_token = get_token
         self.sunat_api = sunat_api
         self.etl_ventas = etl_ventas
         self.ventas_repo = ventas_repo
@@ -30,27 +26,8 @@ class OrquestadorDescargas:
     ):
         resultados: dict[str, dict[str, Any]] = {}
 
-        def obtener_token():
-            try:
-                print(f"[{ruc}] 1. Intentando Token API...")
-                token1 = self.token_api.execute(
-                    ruc, usuario_sol, clave_sol, client_id, client_secret
-                )
-                if token1:
-                    return token1
-            except Exception:
-                print(f"[{ruc}] Falló Token API. Intentando Playwright...")
-
-            try:
-                print(f"[{ruc}] 2. Intentando Token Playwright...")
-                token2 = self.token_scraper.execute(ruc, usuario_sol, clave_sol)
-                if token2:
-                    return token2
-            except Exception:
-                print(f"[{ruc}] Fallo Crítico en Playwright.")
-                return None
-
-        token_acceso = obtener_token()
+        token_acceso = self.get_token.execute(
+            ruc, usuario_sol, clave_sol, client_id, client_secret)
 
         for periodo in periodos:
             if self.ventas_repo.existe_periodo(ruc, periodo):
@@ -79,9 +56,6 @@ class OrquestadorDescargas:
                         datos_archivo, token_acceso, periodo, numero_ticket, ruc
                     )
 
-                    print(
-                        f"[{ruc}] Procesando CSV con ETL para el periodo {periodo}..."
-                    )
                     resultado_etl = self.etl_ventas.execute(archivo_csv_en_memoria)
                     df_limpio = resultado_etl.get("df_limpio")
 
